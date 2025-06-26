@@ -26,16 +26,6 @@ PAGE_CONFIG = {
     "layout": "wide"
 }
 
-# Modèles Grok disponibles
-AVAILABLE_MODELS = {
-    "Grok-3 Latest (Recommandé)": "grok-3-latest",
-    "Grok-3 Mini": "grok-3-mini", 
-    "Grok-3 Fast": "grok-3-fast",
-    "Grok-3 Mini Fast": "grok-3-mini-fast"
-}
-
-DEFAULT_MODEL = "grok-3-latest"
-
 CUSTOM_CSS = """
 <style>
     .stTextArea textarea {
@@ -83,6 +73,45 @@ CUSTOM_CSS = """
 </style>
 """
 
+AVAILABLE_MODELS = {
+    "Grok-3 Latest (Recommandé)": "grok-3-latest",
+    "Grok-3 Mini": "grok-3-mini", 
+    "Grok-3 Fast": "grok-3-fast",
+    "Grok-3 Mini Fast": "grok-3-mini-fast"
+}
+
+# Dictionnaire des coûts par modèle (prix par million de tokens)
+MODEL_COSTS = {
+    "grok-3-latest": {"input_cost": 3.00, "output_cost": 15.00},
+    "grok-3-mini": {"input_cost": 0.30, "output_cost": 0.50},
+    "grok-3-fast": {"input_cost": 5.00, "output_cost": 25.00},
+    "grok-3-mini-fast": {"input_cost": 0.60, "output_cost": 4.00}
+}
+
+MODEL = "grok-3-latest"  # Variable globale pour le modèle actuel
+
+# ================================
+# FONCTIONS DE COÛT
+# ================================
+
+def calculate_tokens_from_chars(char_count: int) -> int:
+    """Calcule le nombre de tokens basé sur le nombre de caractères (1 token = 5 chars)."""
+    return max(1, char_count // 5)
+
+def calculate_cost_from_chars(input_chars: int, output_chars: int, model_code: str) -> float:
+    """Calcule le coût basé sur le nombre de caractères."""
+    if model_code not in MODEL_COSTS:
+        return 0.0
+    
+    input_tokens = calculate_tokens_from_chars(input_chars)
+    output_tokens = calculate_tokens_from_chars(output_chars)
+    
+    cost_info = MODEL_COSTS[model_code]
+    input_cost = (input_tokens / 1_000_000) * cost_info['input_cost']
+    output_cost = (output_tokens / 1_000_000) * cost_info['output_cost']
+    
+    return input_cost + output_cost
+
 # ================================
 # FONCTIONS DE CONFIGURATION
 # ================================
@@ -112,9 +141,6 @@ def initialize_session_state() -> None:
     
     if 'last_response_metrics' not in st.session_state:
         st.session_state.last_response_metrics = None
-    
-    if 'selected_model' not in st.session_state:
-        st.session_state.selected_model = DEFAULT_MODEL
 
 # ================================
 # FONCTIONS D'INTERFACE UTILISATEUR
@@ -128,116 +154,50 @@ def render_page_header() -> None:
 
 def render_sidebar_information() -> None:
     """Affiche les informations et instructions dans la barre latérale."""
+    global MODEL
+    
     with st.sidebar:
-        # === SECTION CONFIGURATION MODÈLE (DROPDOWN ICI) ===
-        st.header("🔧 Configuration du Modèle")
-        
-        # Sélecteur de modèle - CECI EST LE DROPDOWN
-        model_display_names = list(AVAILABLE_MODELS.keys())
-        current_model_display = None
-        
-        # Trouver le nom d'affichage du modèle actuel
-        for display_name, model_code in AVAILABLE_MODELS.items():
-            if model_code == st.session_state.selected_model:
-                current_model_display = display_name
-                break
-        
-        # Si le modèle actuel n'est pas trouvé, utiliser le premier
-        if current_model_display is None:
-            current_model_display = model_display_names[0]
-            st.session_state.selected_model = AVAILABLE_MODELS[current_model_display]
-        
-        # DROPDOWN SELECTOR - CECI EST L'ÉLÉMENT INTERACTIF
-        selected_display_name = st.selectbox(
-            "🤖 Choisissez le modèle Grok:",
-            options=model_display_names,
-            index=model_display_names.index(current_model_display),
-            key="model_selector",
-            help="Différents modèles avec des performances et vitesses variables"
-        )
-        
-        # Mettre à jour le modèle sélectionné
-        new_model = AVAILABLE_MODELS[selected_display_name]
-        if new_model != st.session_state.selected_model:
-            st.session_state.selected_model = new_model
-            st.success(f"✅ Modèle changé vers: **{new_model}**")
-            st.rerun()
-        
-        # Informations sur le modèle sélectionné
-        model_info = get_model_info(st.session_state.selected_model)
-        st.info(model_info)
-        
-        st.markdown("---")
-        
-        # === SECTION INFORMATIONS ===
         st.header("ℹ️ Informations sur l'Assistant")
         
-        # MAINTENANT LE MODÈLE AFFICHÉ EST DYNAMIQUE
-        st.markdown(f"**🔧 Modèle utilisé :** {st.session_state.selected_model}")
-        st.markdown("**⚖️ Spécialité :** Droit et questions juridiques")
-        st.markdown("**🌐 Langue :** Français")
-        st.markdown("**🔄 Mode :** Streaming temps réel")
-        st.markdown("**📄 Formats supportés :** PDF, TXT")
+        # Sélecteur de modèle
+        selected_model_name = st.selectbox(
+            "🔧 Sélectionnez le modèle Grok à utiliser :",
+            options=list(AVAILABLE_MODELS.keys()),
+            index=0,
+        )
         
-        st.markdown("---")
+        # Mettre à jour la variable MODEL
+        MODEL = AVAILABLE_MODELS[selected_model_name]
+
+        # Informations sur le modèle
+        st.markdown(f"**🔧 Modèle utilisé :** {MODEL}")
+        st.markdown("**⚖️ Spécialité :** Droit et questions juridiques")
+        st.markdown("**🔄 Mode :** Streaming temps réel")
+        
+        # Affichage des coûts du modèle sélectionné
+        if MODEL in MODEL_COSTS:
+            cost_info = MODEL_COSTS[MODEL]
+            with st.expander("💰 Tarifs du modèle", expanded=False):
+                st.write(f"• **Entrée:** ${cost_info['input_cost']:.2f} / million tokens")
+                st.write(f"• **Sortie:** ${cost_info['output_cost']:.2f} / million tokens")
+                st.caption("💡 *1 token ≈ 5 caractères*")
         
         # Métriques de la dernière réponse
         if st.session_state.last_response_metrics:
             st.header("📊 Dernières Métriques")
             metrics = st.session_state.last_response_metrics
             
-            col1, col2 = st.columns(2)
-            with col1:
-                st.metric("Caractères", metrics.get('chars_count', 0))
-            with col2:
-                st.metric("Citations", metrics.get('citations_count', 0))
+            st.metric("Caractères", metrics.get('chars_count', 0))
+            st.metric("Citations", metrics.get('citations_count', 0))
+            
+            # Affichage du coût si disponible
+            if 'question_cost' in metrics:
+                st.metric("💰 Coût Question", f"${metrics['question_cost']:.6f}")
             
             if metrics.get('citations'):
                 with st.expander("🔗 Citations"):
                     for i, citation in enumerate(metrics['citations'][:5], 1):
                         st.write(f"{i}. {citation[:100]}...")
-        
-        st.markdown("---")
-        
-        # Exemples de questions
-        st.header("💡 Exemples de Questions")
-        example_questions = [
-            "Quelles sont les obligations d'un employeur en matière de sécurité au travail ?",
-            "Comment contester un PV de stationnement ?",
-            "Quels sont les droits d'un locataire en cas de nuisances ?",
-            "Comment créer une SARL en France ?",
-            "Que faire en cas de litige avec un voisin ?"
-        ]
-        
-        for question in example_questions:
-            if st.button(f"📝 {question[:50]}...", key=f"example_{hash(question)}", help=question):
-                st.session_state.current_query = question
-                st.rerun()
-        
-        st.markdown("---")
-        
-        # Guide des modèles
-        with st.expander("📖 Guide des Modèles"):
-            st.markdown("""
-            **🔥 Grok-3 Latest**: Modèle le plus avancé, réponses les plus complètes
-            
-            **⚡ Grok-3 Fast**: Équilibre entre qualité et vitesse
-            
-            **🎯 Grok-3 Mini**: Version allégée, plus rapide
-            
-            **🚀 Grok-3 Mini Fast**: Le plus rapide, pour des réponses courtes
-            """)
-
-
-def get_model_info(model_code: str) -> str:
-    """Retourne les informations sur un modèle donné."""
-    model_descriptions = {
-        "grok-3-latest": "🔥 Modèle le plus avancé - Réponses détaillées et complètes",
-        "grok-3-fast": "⚡ Équilibre optimal - Qualité et vitesse",
-        "grok-3-mini": "🎯 Version compacte - Réponses concises et rapides", 
-        "grok-3-mini-fast": "🚀 Ultra-rapide - Idéal pour des questions simples"
-    }
-    return model_descriptions.get(model_code, "ℹ️ Modèle Grok standard")
 
 def render_conversation_display() -> None:
     """Affiche l'historique de conversation dans un format chat."""
@@ -370,6 +330,9 @@ def handle_user_query_submission(query: str) -> None:
         st.warning("⚠️ Veuillez entrer une question avant d'envoyer.")
         return
     
+    # Calculer le coût de la question
+    question_cost = calculate_cost_from_chars(len(query), 0, MODEL)
+    
     # Vérification de fichiers joints
     has_uploaded_file = bool(st.session_state.uploaded_files)
     
@@ -403,40 +366,45 @@ def handle_user_query_submission(query: str) -> None:
         final_result = None
         
         try:
-            # Indicateur de streaming
-            status_container.markdown("🔄 *Génération de la réponse en cours...*")
-            
-            # Streaming en temps réel avec le générateur
-            for item in call_grok(enhanced_query):
-                if isinstance(item, dict):
-                    # C'est le résultat final
-                    if item.get("type") == "final_result":
-                        final_result = item
-                        status_container.markdown("✅ *Réponse générée avec succès*")
-                        break
-                    elif item.get("type") == "error":
-                        # Gestion d'erreur
-                        error_msg = f"❌ Erreur: {item['message']}"
-                        response_container.error(error_msg)
-                        status_container.empty()
-                        add_message_to_history("assistant", error_msg)
-                        return
-                else:
-                    # C'est un chunk de texte
-                    complete_response += item
-                    response_container.markdown(complete_response)
-            
+            with st.spinner("🤖 Génération de la réponse en cours..."):
+                # Streaming en temps réel avec le générateur
+                for item in call_grok(MODEL, enhanced_query):
+                    if isinstance(item, dict):
+                        # C'est le résultat final
+                        if item.get("type") == "final_result":
+                            final_result = item
+                            status_container.markdown("✅ *Réponse générée avec succès*")
+                            break
+                        elif item.get("type") == "error":
+                            # Gestion d'erreur
+                            error_msg = f"❌ Erreur: {item['message']}"
+                            response_container.error(error_msg)
+                            status_container.empty()
+                            add_message_to_history("assistant", error_msg)
+                            return
+                    else:
+                        # C'est un chunk de texte
+                        complete_response += item
+                        response_container.markdown(complete_response)
+                
             # Nettoyage du statut
             status_container.empty()
             
             # Traitement du résultat final
             if final_result:
+                # Calculer le coût total de la conversation
+                total_cost = calculate_cost_from_chars(len(enhanced_query), len(complete_response), MODEL)
+                
                 # Stocker les métriques pour la sidebar
                 st.session_state.last_response_metrics = {
-                    'chars_count': len(final_result.get('complete_text', complete_response)),
+                    'chars_count': len(complete_response),
                     'citations_count': len(final_result.get('citations', [])),
-                    'citations': final_result.get('citations', [])
+                    'citations': final_result.get('citations', []),
+                    'question_cost': total_cost  # Coût total de la conversation
                 }
+                
+                # Affichage du coût
+                st.info(f"💰 **Coût de cette conversation:** ${total_cost:.6f}")
                 
                 # Affichage des métriques en bas de la réponse
                 if final_result.get('citations'):
