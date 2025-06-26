@@ -1,4 +1,4 @@
-from grok3_client import client
+from grok3.grok3_client import client
 from typing import Generator, Dict, Any, Union
 
 
